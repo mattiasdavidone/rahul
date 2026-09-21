@@ -52,7 +52,7 @@ function importContactsInBatches() {
     }
   }
 
-  // 4. Save progress bookmark or clear memory if finished
+
   const nextToken = response.nextPageToken;
   
   if (nextToken) {
