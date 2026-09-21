@@ -1,0 +1,59 @@
+function extractEmailsForSpecificMonth() {
+
+  const YEAR = 2026;
+  const MONTH = 7;
+
+
+  const startDate = new Date(YEAR, MONTH - 1, 1);
+  const endDate = new Date(YEAR, MONTH, 1); 
+
+  const formatDate = (d) => Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy/MM/dd");
+  
+
+  const query = `after:${formatDate(startDate)} before:${formatDate(endDate)} in:anywhere`;
+  Logger.log("Running search query: " + query);
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  
+  const existingData = sheet.getDataRange().getValues();
+  const emailSet = new Set();
+  
+  for (let i = 1; i < existingData.length; i++) {
+    if (existingData[i][0]) {
+      emailSet.add(existingData[i][0].toString().toLowerCase());
+    }
+  }
+
+  let start = 0;
+  const batchSize = 100;
+
+  while (true) {
+    const threads = GmailApp.search(query, start, batchSize);
+    if (threads.length === 0) break;
+
+    threads.forEach(thread => {
+      const messages = thread.getMessages();
+      messages.forEach(msg => {
+        [msg.getFrom(), msg.getTo(), msg.getCc(), msg.getBcc()].forEach(field => {
+          if (field) {
+            const matches = field.match(/[\w.-]+@[\w.-]+\.\w+/g);
+            if (matches) {
+              matches.forEach(email => emailSet.add(email.toLowerCase()));
+            }
+          }
+        });
+      });
+    });
+
+    start += batchSize;
+  }
+
+  sheet.clearContents();
+  sheet.appendRow(["Email Address"]);
+  const results = Array.from(emailSet).map(email => [email]);
+  if (results.length > 0) {
+    sheet.getRange(2, 1, results.length, 1).setValues(results);
+  }
+
+  Logger.log(`Finished ${formatDate(startDate)} to ${formatDate(endDate)}. Total unique contacts: ${results.length}`);
+}
