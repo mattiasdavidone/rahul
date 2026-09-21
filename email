@@ -1,59 +1,70 @@
-function extractEmailsForSpecificMonth() {
-
-  const YEAR = 2026;
-  const MONTH = 7;
-
-
-  const startDate = new Date(YEAR, MONTH - 1, 1);
-  const endDate = new Date(YEAR, MONTH, 1); 
-
-  const formatDate = (d) => Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy/MM/dd");
-  
-
-  const query = `after:${formatDate(startDate)} before:${formatDate(endDate)} in:anywhere`;
-  Logger.log("Running search query: " + query);
-
+function importContactsInBatches() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const userProps = PropertiesService.getUserProperties();
   
-  const existingData = sheet.getDataRange().getValues();
-  const emailSet = new Set();
-  
-  for (let i = 1; i < existingData.length; i++) {
-    if (existingData[i][0]) {
-      emailSet.add(existingData[i][0].toString().toLowerCase());
+
+  const savedToken = userProps.getProperty('NEXT_PAGE_TOKEN') || null;
+
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(["Name", "Email", "Phone"]);
+  }
+
+  const existingEmails = new Set();
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    const existingData = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
+    existingData.forEach(row => {
+      const email = row[0]?.toString().toLowerCase().trim();
+      if (email) existingEmails.add(email);
+    });
+  }
+// PAGE SIZEEEEEEE // 
+  const response = People.OtherContacts.list({
+    readMask: 'names,emailAddresses,phoneNumbers',
+    pageSize: 50,
+    pageToken: savedToken
+  });
+
+  if (response.otherContacts) {
+    const rows = [];
+    
+    for (const person of response.otherContacts) {
+      const name = person.names?.[0]?.displayName || '';
+      const rawEmail = person.emailAddresses?.[0]?.value || '';
+      const phone = person.phoneNumbers?.[0]?.value || '';
+      const normalizedEmail = rawEmail.toLowerCase().trim();
+      
+
+      if (normalizedEmail && existingEmails.has(normalizedEmail)) {
+        continue;
+      }
+      
+      if (normalizedEmail) existingEmails.add(normalizedEmail);
+      rows.push([name, rawEmail, phone]);
+    }
+    
+
+    if (rows.length > 0) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 3).setValues(rows);
     }
   }
 
-  let start = 0;
-  const batchSize = 100;
+  // 4. Save progress bookmark or clear memory if finished
+  const nextToken = response.nextPageToken;
+  
+  if (nextToken) {
+    userProps.setProperty('NEXT_PAGE_TOKEN', nextToken);
+    SpreadsheetApp.getUi().alert(`Batch of 250 imported! Run again to get the next 250.`);
+  } else {
 
-  while (true) {
-    const threads = GmailApp.search(query, start, batchSize);
-    if (threads.length === 0) break;
-
-    threads.forEach(thread => {
-      const messages = thread.getMessages();
-      messages.forEach(msg => {
-        [msg.getFrom(), msg.getTo(), msg.getCc(), msg.getBcc()].forEach(field => {
-          if (field) {
-            const matches = field.match(/[\w.-]+@[\w.-]+\.\w+/g);
-            if (matches) {
-              matches.forEach(email => emailSet.add(email.toLowerCase()));
-            }
-          }
-        });
-      });
-    });
-
-    start += batchSize;
+    userProps.deleteProperty('NEXT_PAGE_TOKEN');
+    SpreadsheetApp.getUi().alert("All contacts fully imported! Resetting progress bookmark.");
   }
+}
 
-  sheet.clearContents();
-  sheet.appendRow(["Email Address"]);
-  const results = Array.from(emailSet).map(email => [email]);
-  if (results.length > 0) {
-    sheet.getRange(2, 1, results.length, 1).setValues(results);
-  }
 
-  Logger.log(`Finished ${formatDate(startDate)} to ${formatDate(endDate)}. Total unique contacts: ${results.length}`);
+function resetProgressToken() {
+  PropertiesService.getUserProperties().deleteProperty('NEXT_PAGE_TOKEN');
+  SpreadsheetApp.getUi().alert("Progress reset. Next run will start from contact #1.");
 }
