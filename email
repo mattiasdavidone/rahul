@@ -19,12 +19,14 @@ function importContactsInBatches() {
       if (email) existingEmails.add(email);
     });
   }
-// PAGE SIZEEEEEEE // 
+  
+// PAGE SIZEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE //
   const response = People.OtherContacts.list({
     readMask: 'names,emailAddresses,phoneNumbers',
     pageSize: 50,
     pageToken: savedToken
   });
+// PAGE SIZEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE //
 
   if (response.otherContacts) {
     const rows = [];
